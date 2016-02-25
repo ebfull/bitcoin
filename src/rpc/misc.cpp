@@ -396,3 +396,40 @@ UniValue setmocktime(const UniValue& params, bool fHelp)
 
     return NullUniValue;
 }
+
+UniValue createhtlc(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 4)
+        throw runtime_error(
+            "createhtlc seller_key refund_key hash timeout\n"
+            "\nCreate an address whose funds can be unlocked with a preimage or a timeout\n"
+            "\nArguments:\n"
+            "1. seller_key (string, required) pubkey of the posessor of the preimage"
+            "2. refund_key (string, required) pubkey of the recipient of the refund"
+            "3. h_key (string, required) SHA256 hash of the preimage"
+            "4. cltv_height (number, required) block height or unix timestamp for refund"
+        );
+
+    std::vector<unsigned char> seller_key = ParseHexV(params[0], "seller_key");
+    std::vector<unsigned char> refund_key = ParseHexV(params[1], "refund_key");
+    std::vector<unsigned char> h_key = ParseHexV(params[2], "h_key");
+
+    if (h_key.size() != 32) {
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "H(K) should be 32 bytes");
+    }
+
+    CScript redeem_script;
+    redeem_script << OP_SHA256 << h_key << OP_EQUAL
+                  << OP_IF << seller_key
+                  << OP_ELSE << CScriptNum(params[3].get_int64()) << OP_CHECKLOCKTIMEVERIFY << OP_DROP << refund_key
+                  << OP_ENDIF << OP_CHECKSIG;
+
+    UniValue result(UniValue::VOBJ);
+    result.push_back(Pair("redeem_script", HexStr(redeem_script.begin(), redeem_script.end())));
+    result.push_back(Pair("p2sh", CBitcoinAddress(CScriptID(redeem_script)).ToString()));
+
+    CScript scriptPubKey = GetScriptForDestination(CBitcoinAddress(CScriptID(redeem_script)).Get());
+
+    result.push_back(Pair("scriptPubKey", HexStr(scriptPubKey.begin(), scriptPubKey.end())));
+    return result;
+}
